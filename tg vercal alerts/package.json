@@ -1,0 +1,5 @@
+{
+  "name": "vercel-telegram-alert",
+  "private": true,
+  "type": "module"
+}
