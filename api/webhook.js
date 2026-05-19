@@ -4,9 +4,10 @@ export default async function handler(req, res) {
   }
 
   const BOT_TOKEN_1 = process.env.TELEGRAM_BOT_TOKEN;
-  const CHAT_ID_1 = process.env.TELEGRAM_CHAT_ID;
+  const CHAT_ID_1   = process.env.TELEGRAM_CHAT_ID;
   const BOT_TOKEN_2 = process.env.TELEGRAM_BOT_TOKEN_2;
-  const CHAT_ID_2 = process.env.TELEGRAM_CHAT_ID_2;
+  const CHAT_ID_2   = process.env.TELEGRAM_CHAT_ID_2;
+  const THREAD_ID_2 = process.env.TELEGRAM_THREAD_ID_2;
 
   if (!BOT_TOKEN_1 || !CHAT_ID_1 || !BOT_TOKEN_2 || !CHAT_ID_2) {
     return res.status(500).json({
@@ -19,17 +20,25 @@ export default async function handler(req, res) {
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
 
     const ticker = String(body.ticker || "").trim();
-    const side   = String(body.side || "").trim();
-    const entry  = String(body.entry || "").trim();
-    const sl     = String(body.sl || "").trim();
-    const tp     = String(body.tp || "").trim();
+    const side   = String(body.side   || "").trim();
+    const entry  = String(body.entry  || "").trim();
+    const sl     = String(body.sl     || "").trim();
+    const tp     = String(body.tp     || "").trim();
 
     if (!ticker) {
       return res.status(400).json({ ok: false, error: "Empty alert payload" });
     }
 
     const emoji = side === "LONG" ? "🟢" : "🔴";
-    const text = `${emoji} <b>${ticker} ${side}</b>\n\n📥 Entry: <b>${entry}</b>\n🛑 SL: <b>${sl}</b>\n🎯 TP: <b>${tp}</b>`;
+    const text  = `${emoji} <b>${ticker} ${side}</b>\n\n📥 Entry: <b>${entry}</b>\n🛑 SL: <b>${sl}</b>\n🎯 TP: <b>${tp}</b>`;
+
+    const payload2 = {
+      chat_id: CHAT_ID_2,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      ...(THREAD_ID_2 ? { message_thread_id: Number(THREAD_ID_2) } : {})
+    };
 
     const [tgRes1, tgRes2] = await Promise.all([
       fetch(`https://api.telegram.org/bot${BOT_TOKEN_1}/sendMessage`, {
@@ -45,12 +54,7 @@ export default async function handler(req, res) {
       fetch(`https://api.telegram.org/bot${BOT_TOKEN_2}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: CHAT_ID_2,
-          text,
-          parse_mode: "HTML",
-          disable_web_page_preview: true
-        })
+        body: JSON.stringify(payload2)
       })
     ]);
 
@@ -66,11 +70,7 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(200).json({
-      ok: true,
-      telegram1: tgData1,
-      telegram2: tgData2
-    });
+    return res.status(200).json({ ok: true, telegram1: tgData1, telegram2: tgData2 });
   } catch (error) {
     return res.status(500).json({ ok: false, error: error.message });
   }
