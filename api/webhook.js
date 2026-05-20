@@ -9,10 +9,10 @@ export default async function handler(req, res) {
   const CHAT_ID_2   = process.env.TELEGRAM_CHAT_ID_2;
   const THREAD_ID_2 = process.env.TELEGRAM_THREAD_ID_2;
 
-  if (!BOT_TOKEN_1 || !CHAT_ID_1 || !BOT_TOKEN_2 || !CHAT_ID_2) {
+  if (!BOT_TOKEN_1 || !CHAT_ID_1) {
     return res.status(500).json({
       ok: false,
-      error: "Missing TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID / TELEGRAM_BOT_TOKEN_2 / TELEGRAM_CHAT_ID_2"
+      error: "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID"
     });
   }
 
@@ -32,15 +32,7 @@ export default async function handler(req, res) {
     const emoji = side === "LONG" ? "🟢" : "🔴";
     const text  = `${emoji} <b>${ticker} ${side}</b>\n\n📥 Entry: <b>${entry}</b>\n🛑 SL: <b>${sl}</b>\n🎯 TP: <b>${tp}</b>`;
 
-    const payload2 = {
-      chat_id: CHAT_ID_2,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      ...(THREAD_ID_2 ? { message_thread_id: Number(THREAD_ID_2) } : {})
-    };
-
-    const [tgRes1, tgRes2] = await Promise.all([
+    const sends = [
       fetch(`https://api.telegram.org/bot${BOT_TOKEN_1}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -50,27 +42,35 @@ export default async function handler(req, res) {
           parse_mode: "HTML",
           disable_web_page_preview: true
         })
-      }),
-      fetch(`https://api.telegram.org/bot${BOT_TOKEN_2}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload2)
       })
-    ]);
+    ];
 
-    const tgData1 = await tgRes1.json();
-    const tgData2 = await tgRes2.json();
-
-    if (!tgRes1.ok || !tgRes2.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: "Telegram API error",
-        telegram1: tgData1,
-        telegram2: tgData2
-      });
+    if (BOT_TOKEN_2 && CHAT_ID_2) {
+      const payload2 = {
+        chat_id: CHAT_ID_2,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        ...(THREAD_ID_2 ? { message_thread_id: Number(THREAD_ID_2) } : {})
+      };
+      sends.push(
+        fetch(`https://api.telegram.org/bot${BOT_TOKEN_2}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload2)
+        })
+      );
     }
 
-    return res.status(200).json({ ok: true, telegram1: tgData1, telegram2: tgData2 });
+    const results = await Promise.all(sends);
+    const data    = await Promise.all(results.map(r => r.json()));
+
+    const allOk = results.every(r => r.ok);
+    if (!allOk) {
+      return res.status(500).json({ ok: false, error: "Telegram API error", results: data });
+    }
+
+    return res.status(200).json({ ok: true, results: data });
   } catch (error) {
     return res.status(500).json({ ok: false, error: error.message });
   }
