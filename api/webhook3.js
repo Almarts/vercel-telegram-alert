@@ -21,13 +21,16 @@ export default async function handler(req, res) {
       ? JSON.parse(req.body || "{}")
       : (req.body || {});
 
-    const ticker  = String(body.ticker || "").trim();
-    const side    = String(body.side || "").trim();
-    const event   = String(body.event || "").trim();
-    const entry   = String(body.entry || "").trim();
-    const sl      = String(body.sl || "").trim();
-    const tp      = String(body.tp || "").trim();
-    const exit    = String(body.exit || "").trim();
+    // ← ЛОГИРОВАНИЕ: смотри в Vercel Logs
+    console.log("PARSED BODY:", JSON.stringify(body));
+
+    const ticker  = String(body.ticker  || "").trim();
+    const side    = String(body.side    || "").trim();
+    const event   = String(body.event   || "").trim();
+    const entry   = String(body.entry   || "").trim();
+    const sl      = String(body.sl      || "").trim();
+    const tp      = String(body.tp      || "").trim();
+    const exit    = String(body.exit    || "").trim();
     const message = String(body.message || "").trim();
 
     let text = "";
@@ -37,16 +40,18 @@ export default async function handler(req, res) {
     } else if (event === "ENTRY") {
       const emoji = side === "LONG" ? "🟢" : side === "SHORT" ? "🔴" : "⚪";
       text = `${emoji} <b>${ticker} ${side}</b>\n\n📌 Event: <b>${event}</b>\n📥 Entry: <b>${entry}</b>\n🛑 SL: <b>${sl}</b>\n🎯 TP: <b>${tp}</b>`;
-    } else if (ticker && event && exit) {
-      text = `📤 <b>${ticker}</b>\n\n🏁 Event: <b>${event}</b>\n💰 Exit: <b>${exit}</b>`;
+    } else if (event === "TAKEPROFIT" || event === "STOPLOSS") {
+      const emoji = event === "TAKEPROFIT" ? "✅" : "❌";
+      text = `${emoji} <b>${ticker} ${side}</b>\n\n🏁 Event: <b>${event}</b>\n📥 Entry: <b>${entry}</b>\n💰 Exit: <b>${exit}</b>`;
+    } else if (ticker && event) {
+      // fallback — любой неизвестный алерт
+      text = `📋 <b>${ticker}</b>\n🏁 Event: <b>${event}</b>`;
     }
 
     if (!text) {
-      return res.status(400).json({
-        ok: false,
-        error: "Unsupported or empty alert payload",
-        body
-      });
+      // Не возвращаем 400 — логируем и отвечаем 200 чтобы TradingView не деактивировал алерт
+      console.log("UNKNOWN PAYLOAD, ignored:", JSON.stringify(body));
+      return res.status(200).json({ ok: true, note: "unknown payload, ignored" });
     }
 
     const sends = [
@@ -70,7 +75,6 @@ export default async function handler(req, res) {
         disable_web_page_preview: true,
         ...(THREAD_ID_2 ? { message_thread_id: Number(THREAD_ID_2) } : {})
       };
-
       sends.push(
         fetch(`https://api.telegram.org/bot${BOT_TOKEN_2}/sendMessage`, {
           method: "POST",
@@ -81,19 +85,17 @@ export default async function handler(req, res) {
     }
 
     const results = await Promise.all(sends);
-    const data = await Promise.all(results.map(r => r.json()));
+    const data    = await Promise.all(results.map(r => r.json()));
 
     const allOk = results.every(r => r.ok);
     if (!allOk) {
-      return res.status(500).json({
-        ok: false,
-        error: "Telegram API error",
-        results: data
-      });
+      return res.status(500).json({ ok: false, error: "Telegram API error", results: data });
     }
 
     return res.status(200).json({ ok: true, results: data });
+
   } catch (error) {
+    console.log("CATCH ERROR:", error.message);
     return res.status(500).json({ ok: false, error: error.message });
   }
 }
